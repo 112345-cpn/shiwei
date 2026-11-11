@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>我的 · 拾味 SHIWEI</title>
+  <link rel="icon" href="favicon.ico" />
+  <link rel="stylesheet" href="css/app.css" />
+</head>
+<body>
+  <div id="app-header"></div>
+
+  <main class="page">
+    <div class="wrap" id="root">
+      <div class="panel">
+        <div class="sk sk-line" style="width:40%"></div>
+      </div>
+    </div>
+  </main>
+
+  <div id="app-footer"></div>
+
+  <script src="js/api.js"></script>
+  <script src="js/ui.js"></script>
+  <script>
+    (() => {
+      const $root = document.getElementById('root');
+      let me = null;
+      let notes = [];
+      let signDays = 0;
+
+      function render() {
+        const avatar = me.icon || UI.DEFAULT_AVATAR;
+
+        const noteCards = notes.length
+          ? notes
+              .map((b) => {
+                const img = UI.firstImage(b.images);
+                return (
+                  '<a class="note" href="note.html?id=' + b.id + '">' +
+                    '<div class="note__media">' +
+                      (img
+                        ? '<img src="' + UI.esc(img) + '" alt="" loading="lazy" ' +
+                          'referrerpolicy="no-referrer" ' +
+                          'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'" />' +
+                          '<div class="shop__ph" style="display:none">' + UI.esc((b.title || '记').slice(0, 1)) + '</div>'
+                        : '<div class="shop__ph">' + UI.esc((b.title || '记').slice(0, 1)) + '</div>') +
+                    '</div>' +
+                    '<div class="note__body">' +
+                      '<h3 class="note__title">' + UI.esc(b.title || '无标题') + '</h3>' +
+                      '<div class="note__foot">' +
+                        '<span>' + UI.timeAgo(b.createTime) + '</span>' +
+                        '<span class="like">' + UI.icons.heart + UI.sold(b.liked) + '</span>' +
+                      '</div>' +
+                    '</div>' +
+                  '</a>'
+                );
+              })
+              .join('')
+          : UI.empty('还没写过笔记', '吃过好东西，值得记下来');
+
+        $root.innerHTML =
+          '<div class="panel">' +
+            '<div class="between" style="flex-wrap:wrap;gap:16px">' +
+              '<div class="profile">' +
+                '<img class="avatar avatar--lg" src="' + UI.esc(avatar) + '" alt="头像" ' +
+                'onerror="this.src=\'' + UI.DEFAULT_AVATAR + '\'" />' +
+                '<div>' +
+                  '<h1 class="profile__name">' + UI.esc(me.nickName || '未命名') + '</h1>' +
+                  '<p class="profile__meta">ID ' + UI.esc(me.id) + ' · 拾味用户</p>' +
+                '</div>' +
+              '</div>' +
+              '<div class="row">' +
+                '<a class="btn btn--ghost btn--sm" href="note-edit.html">写笔记</a>' +
+                '<button class="btn btn--ghost btn--sm" id="logout">退出登录</button>' +
+              '</div>' +
+            '</div>' +
+
+            '<div class="stats" style="margin-top:22px">' +
+              '<div class="stat">' +
+                '<div class="stat__n" style="color:var(--brand)">' + signDays + '</div>' +
+                '<div class="stat__l">连续签到（天）</div>' +
+              '</div>' +
+              '<div class="stat">' +
+                '<div class="stat__n">' + notes.length + '</div>' +
+                '<div class="stat__l">写过的笔记</div>' +
+              '</div>' +
+              '<div class="stat">' +
+                '<div class="stat__n" style="font-size:15px;padding-top:4px">' +
+                  (window.__wsState === 'open' ? '已连接' : '未连接') +
+                '</div>' +
+                '<div class="stat__l">实时通知</div>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+
+          '<div class="sec-head">' +
+            '<div>' +
+              '<h2 class="sec-head__title">我的笔记</h2>' +
+              '<p class="sec-head__desc">你写过的探店记录</p>' +
+            '</div>' +
+          '</div>' +
+          '<div class="notes">' + noteCards + '</div>';
+
+        document.getElementById('logout').onclick = async () => {
+          try {
+            await API.User.logout();
+          } catch (e) {
+            /* token 已经失效也无所谓，本地照清 */
+          }
+          API.clearSession();
+          API.ws.close();
+          location.href = 'index.html';
+        };
+      }
+
+      /* ---------- 启动 ---------- */
+
+      if (!API.isLogin()) {
+        UI.requireLogin();
+        return;
+      }
+
+      UI.mountHeader('me');
+      UI.mountFooter();
+
+      (async () => {
+        try {
+          const [meRes, notesRes, signRes] = await Promise.all([
+            API.User.me(),
+            API.Blog.mine(1).catch(() => ({ data: [] })),
+            API.User.signCount().catch(() => ({ data: 0 })),
+          ]);
+
+          me = meRes.data;
+          if (!me) {
+            API.clearSession();
+            UI.requireLogin();
+            return;
+          }
+          API.setUser(me);
+
+          const page = API.normalizePage(notesRes);
+          notes = page.records || [];
+          signDays = Number(signRes.data) || 0;
+
+          render();
+
+          // WS 状态变化后刷新那格显示
+          UI.bindSeckillPush((msg) => {
+            if (msg.type === 'seckill_result') {
+              UI.toast(
+                (msg.success ? '秒杀成功：' : '秒杀失败：') + (msg.msg || ''),
+                msg.success ? 'ok' : 'err'
+              );
+            }
+          });
+          setInterval(() => {
+            const el = document.querySelectorAll('.stat__n')[2];
+            if (el) el.textContent = window.__wsState === 'open' ? '已连接' : '未连接';
+          }, 1000);
+        } catch (e) {
+          $root.innerHTML = UI.empty('没加载出来', e.message);
+        }
+      })();
+    })();
+    </script>
+</body>
+</html>

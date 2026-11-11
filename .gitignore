@@ -1,0 +1,89 @@
+HELP.md
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+out/
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+
+### 日志文件 ###
+logs/
+*.log
+*.log.*
+
+### 临时文件 ###
+*.tmp
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
+
+### 环境变量 ###
+.env
+.env.local
+.env.*.local
+.env.docker
+
+### 上传文件（用户上传的图片等） ###
+upload/
+uploads/
+static/upload/
+
+### 应用配置敏感信息 ###
+**/application-local.yaml
+**/application-secret.yaml
+
+### 依赖目录（如果不用 Maven Wrapper） ###
+.mvn/wrapper/maven-wrapper.jar
+
+### 覆盖率报告 ###
+jacoco/
+coverage/
+# 这条原本是为了排除 jacoco 生成的 HTML 报告，
+# 但它会顺手把 web/ 下的所有前端页面一起排除掉——仓库里就没有 index.html 了。
+# 所以必须给前端和模板文件开白名单。
+*.html
+!web/**/*.html
+!src/main/resources/**/*.html
+
+### Windows 版 nginx 发行包 ###
+# 含 nginx.exe 与 gitee 上克隆来的前端仓库（里面有独立 .git），
+# 不适合作为项目源码提交；Docker 部署用的是 web/ 目录。
+nginx-1.18.0/
+
+### 本地构建辅助文件 ###
+cp.txt
+build.log
+*.png.bak
+
+### 改动前的原始文件备份（本地排查用，不进仓库） ###
+.orig_fix/
+.env.docker.example
+

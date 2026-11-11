@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>笔记 · 拾味 SHIWEI</title>
+  <link rel="icon" href="favicon.ico" />
+  <link rel="stylesheet" href="css/app.css" />
+</head>
+<body>
+  <div id="app-header"></div>
+
+  <main class="page">
+    <div class="wrap">
+      <div class="sec-head" style="margin-top:8px">
+        <div>
+          <h1 class="sec-head__title" style="font-size:clamp(24px,3vw,32px)">探店笔记</h1>
+          <p class="sec-head__desc" id="desc">看看别人吃了什么</p>
+        </div>
+        <a class="btn btn--dark" href="note-edit.html" id="write">
+          <span id="plus"></span>写一篇
+        </a>
+      </div>
+
+      <div class="tabs" id="tabs" style="margin-bottom:22px">
+        <button data-tab="hot" class="is-on">热门</button>
+        <button data-tab="follow">关注</button>
+        <button data-tab="mine">我的</button>
+      </div>
+
+      <div class="notes" id="list"></div>
+
+      <div style="text-align:center;margin-top:34px">
+        <button class="btn btn--ghost hide" id="more">加载更多</button>
+      </div>
+    </div>
+  </main>
+
+  <div id="app-footer"></div>
+
+  <script src="js/api.js"></script>
+  <script src="js/ui.js"></script>
+  <script>
+    (() => {
+      const state = {
+        tab: 'hot',
+        page: 1,
+        scroll: { lastId: Date.now(), offset: 0 },
+        loading: false,
+      };
+
+      const $list = document.getElementById('list');
+      const $more = document.getElementById('more');
+      const $desc = document.getElementById('desc');
+
+      document.getElementById('plus').innerHTML = UI.icons.plus;
+
+      /* ---------- 笔记卡片 ---------- */
+
+      function card(b) {
+        const img = UI.firstImage(b.images);
+        const liked = b.isLike === true;
+
+        return (
+          '<article class="note">' +
+            '<a class="note__media" href="note.html?id=' + b.id + '">' +
+              (img
+                ? '<img src="' + UI.esc(img) + '" alt="' + UI.esc(b.title || '') +
+                  '" loading="lazy" referrerpolicy="no-referrer" ' +
+                  'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'" />' +
+                  '<div class="shop__ph" style="display:none">' + UI.esc((b.title || '记').slice(0, 1)) + '</div>'
+                : '<div class="shop__ph">' + UI.esc((b.title || '记').slice(0, 1)) + '</div>') +
+            '</a>' +
+            '<div class="note__body">' +
+              '<a href="note.html?id=' + b.id + '">' +
+                '<h3 class="note__title">' + UI.esc(b.title || '无标题') + '</h3>' +
+              '</a>' +
+              (b.content ? '<p class="note__text">' + UI.esc(b.content) + '</p>' : '') +
+              '<div class="note__foot">' +
+                '<span class="note__author">' +
+                  '<img class="avatar avatar--sm" src="' + UI.esc(b.icon || UI.DEFAULT_AVATAR) + '" alt="" ' +
+                  'onerror="this.src=\'' + UI.DEFAULT_AVATAR + '\'" />' +
+                  '<span>' + UI.esc(b.name || '匿名') + '</span>' +
+                '</span>' +
+                '<button class="like ' + (liked ? 'is-on' : '') + '" data-like="' + b.id + '">' +
+                  (liked ? UI.icons.heartFill : UI.icons.heart) +
+                  '<span>' + UI.sold(b.liked) + '</span>' +
+                '</button>' +
+              '</div>' +
+            '</div>' +
+          '</article>'
+        );
+      }
+
+      function bindLikes() {
+        $list.querySelectorAll('[data-like]').forEach((btn) => {
+          if (btn.dataset.bound) return;
+          btn.dataset.bound = '1';
+          btn.onclick = async (e) => {
+            e.preventDefault();
+            if (!UI.requireLogin()) return;
+            const id = Number(btn.dataset.like);
+            const wasOn = btn.classList.contains('is-on');
+            const n = Number(btn.querySelector('span').textContent) || 0;
+            // 乐观更新，失败了回滚
+            btn.classList.toggle('is-on', !wasOn);
+            btn.querySelector('svg').outerHTML = wasOn ? UI.icons.heart : UI.icons.heartFill;
+            btn.querySelector('span').textContent = String(wasOn ? Math.max(n - 1, 0) : n + 1);
+            try {
+              await API.Blog.like(id);
+            } catch (err) {
+              UI.toast(err.message, 'err');
+              btn.classList.toggle('is-on', wasOn);
+              btn.querySelector('svg').outerHTML = wasOn ? UI.icons.heartFill : UI.icons.heart;
+              btn.querySelector('span').textContent = String(n);
+            }
+          };
+        });
+      }
+
+      /* ---------- 数据 ---------- */
+
+      async function fetchPage(reset) {
+        if (state.tab === 'hot') {
+          const res = await API.Blog.hot(state.page);
+          return API.normalizePage(res);
+        }
+        if (state.tab === 'mine') {
+          const res = await API.Blog.mine(state.page);
+          return API.normalizePage(res);
+        }
+        // 关注流：滚动分页，返回 { list, minTime, offset }
+        const res = await API.Blog.ofFollow(state.scroll.lastId, state.scroll.offset);
+        const d = res.data || {};
+        const records = d.list || [];
+        state.scroll.lastId = d.minTime || state.scroll.lastId;
+        state.scroll.offset = d.offset || 0;
+        return { records, total: records.length < 10 ? state.page * 10 : state.page * 10 + 1 };
+      }
+
+      function descOf(tab) {
+        return {
+          hot: '按点赞量排序，最近有人在看的',
+          follow: '你关注的人都发了什么',
+          mine: '你自己写过的',
+        }[tab];
+      }
+
+      async function load(reset) {
+        if (state.loading) return;
+        if (!reset && $more.classList.contains('hide')) return;
+        state.loading = true;
+
+        if (reset) {
+          $list.innerHTML = UI.skeletonGrid(6);
+          $more.classList.add('hide');
+        }
+
+        try {
+          const { records, total } = await fetchPage(reset);
+          const html = records.map(card).join('');
+
+          if (reset) {
+            $list.innerHTML = html || UI.empty(emptyTitle(), emptyDesc());
+          } else if (html) {
+            $list.insertAdjacentHTML('beforeend', html);
+          }
+
+          bindLikes();
+
+          const loaded = state.page * (records.length || 10);
+          $more.classList.toggle('hide', records.length === 0 || loaded >= total);
+          $desc.textContent = descOf(state.tab);
+        } catch (e) {
+          if (reset) {
+            $list.innerHTML = UI.empty(
+              e.message === '请先登录' ? '先登录才能看' : '没加载出来',
+              e.message
+            );
+          }
+          if (e.message !== '请先登录') UI.toast(e.message, 'err');
+        } finally {
+          state.loading = false;
+        }
+      }
+
+      function emptyTitle() {
+        return { hot: '还没有热门笔记', follow: '关注的人还没发', mine: '你还没写过' }[state.tab];
+      }
+
+      function emptyDesc() {
+        return {
+          hot: '等有人发第一篇',
+          follow: '去发现页找人关注',
+          mine: '点右上角写一篇，试试？',
+        }[state.tab];
+      }
+
+      /* ---------- 事件 ---------- */
+
+      document.getElementById('tabs').addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-tab]');
+        if (!btn) return;
+
+        const tab = btn.dataset.tab;
+        if (tab !== 'hot' && !API.isLogin()) {
+          UI.requireLogin();
+          return;
+        }
+
+        document.querySelectorAll('#tabs button').forEach((b) => b.classList.remove('is-on'));
+        btn.classList.add('is-on');
+
+        state.tab = tab;
+        state.page = 1;
+        state.scroll = { lastId: Date.now(), offset: 0 };
+        load(true);
+      });
+
+      $more.onclick = () => {
+        state.page += 1;
+        load(false);
+      };
+
+      /* ---------- 启动 ---------- */
+
+      UI.mountHeader('notes');
+      UI.mountFooter();
+      load(true);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,184 @@
+# ===============================================
+# 拾味 HM-DianPing 一键启动编排
+#
+#   docker compose up -d --build      启动全部
+#   docker compose down               停止（保留数据）
+#   docker compose down -v            停止并清空数据
+#
+# 默认起 5 个容器：mysql / redis / rabbitmq / app / web
+# Sentinel 控制台不在默认启动范围（镜像不在本机，需要联网拉），
+# 要开就用：docker compose --profile monitor up -d
+# ===============================================
+
+services:
+  # ========== MySQL ==========
+  mysql:
+    image: mysql:8.0
+    container_name: hmdp-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-hmdp123456}
+      MYSQL_DATABASE: ${DB_NAME:-hmdp}
+      TZ: Asia/Shanghai
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      # 首次启动（数据卷为空）时自动执行建表 + 灌数据脚本
+      - ./src/main/resources/db:/docker-entrypoint-initdb.d:ro
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+      - --sql-mode=
+      - --max_connections=500
+      - --innodb_buffer_pool_size=256M
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - hmdp-net
+
+  # ========== Redis ==========
+  redis:
+    image: redis:7-alpine
+    container_name: hmdp-redis
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+      - ./deploy/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: redis-server /usr/local/etc/redis/redis.conf
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - hmdp-net
+
+  # ========== RabbitMQ ==========
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: hmdp-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+      TZ: Asia/Shanghai
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - hmdp-net
+
+  # ========== 应用（Spring Boot）==========
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hmdp:latest
+    container_name: hmdp-app
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      # 数据库
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-hmdp}
+      DB_USERNAME: root
+      DB_PASSWORD: ${DB_PASSWORD:-hmdp123456}
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      REDIS_DB: 0
+      # RabbitMQ
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      # Sentinel 控制台（仅 monitor profile 时才真的连得上）
+      SENTINEL_DASHBOARD: sentinel:8858
+      # 上传目录：必须与下方 upload_data 卷的挂载点一致，
+      # 否则 nginx 的 @uploaded 回退找不到图。
+      UPLOAD_DIR: /var/www/hmdp/imgs
+      LOG_PATH: /var/log/hmdp
+      JAVA_OPTS: "-Xms256m -Xmx768m -XX:+UseG1GC -XX:MaxRAMPercentage=70.0"
+    ports:
+      # 直接访问后端（调试用）；走页面请用 8080
+      - "${SERVER_PORT:-8081}:8081"
+    volumes:
+      - upload_data:/var/www/hmdp/imgs
+      - app_logs:/var/log/hmdp
+    networks:
+      - hmdp-net
+
+  # ========== 前端（nginx）==========
+  web:
+    image: nginx:1.25-alpine
+    container_name: hmdp-web
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    volumes:
+      - ./web:/usr/share/nginx/html:ro
+      - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # 上传的图片由 app 写入这个卷，nginx 只读挂进去给 @uploaded 用
+      - upload_data:/var/www/hmdp/imgs:ro
+    networks:
+      - hmdp-net
+
+  # ========== Sentinel 控制台（可选）==========
+  # 镜像不在本机，需要联网拉；不启动也不影响限流（规则在代码注解里）
+  sentinel:
+    image: bladex/sentinel-dashboard:1.8.6
+    container_name: hmdp-sentinel
+    restart: unless-stopped
+    profiles: ["monitor"]
+    ports:
+      - "${SENTINEL_PORT:-8858}:8858"
+    environment:
+      JAVA_OPTS: "-Dserver.port=8858 -Dsentinel.dashboard.auth.username=sentinel -Dsentinel.dashboard.auth.password=sentinel"
+    networks:
+      - hmdp-net
+
+networks:
+  hmdp-net:
+    driver: bridge
+    name: hmdp-network
+
+volumes:
+  mysql_data:
+    name: hmdp-mysql-data
+  redis_data:
+    name: hmdp-redis-data
+  rabbitmq_data:
+    name: hmdp-rabbitmq-data
+  app_logs:
+    name: hmdp-app-logs
+  upload_data:
+    name: hmdp-upload-data

@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>写笔记 · 拾味 SHIWEI</title>
+  <link rel="icon" href="favicon.ico" />
+  <link rel="stylesheet" href="css/app.css" />
+  <style>
+    .editor {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    .editor__head {
+      margin-bottom: 26px;
+    }
+    .editor__title {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.6px;
+      margin: 0 0 6px;
+    }
+    .shots {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    .shot {
+      position: relative;
+      aspect-ratio: 1;
+      border-radius: var(--r-md);
+      overflow: hidden;
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+    }
+    .shot img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .shot__del {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: rgba(25, 21, 18, 0.7);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-size: 13px;
+      line-height: 1;
+      backdrop-filter: blur(4px);
+    }
+    .shot--add {
+      display: grid;
+      place-items: center;
+      border: 1px dashed var(--line-strong);
+      color: var(--ink-3);
+      gap: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.16s;
+    }
+    .shot--add:hover {
+      border-color: var(--brand);
+      color: var(--brand);
+      background: var(--brand-soft);
+    }
+    .shot--busy {
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+      color: var(--ink-3);
+    }
+    .counter {
+      text-align: right;
+      font-size: 12px;
+      color: var(--ink-4);
+      font-variant-numeric: tabular-nums;
+      margin-top: 6px;
+    }
+    @media (max-width: 640px) {
+      .shots {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app-header"></div>
+
+  <main class="page">
+    <div class="wrap">
+      <div class="editor">
+        <div class="editor__head">
+          <h1 class="editor__title">写一篇</h1>
+          <p class="muted" style="font-size:14px;margin:0">
+            吃过什么、多少钱、值不值。写具体的，别写「yyds」。
+          </p>
+        </div>
+
+        <!-- 图片 -->
+        <div class="field">
+          <label class="field__label">照片（最多 9 张，第一张作封面）</label>
+          <div class="shots" id="shots"></div>
+          <input type="file" id="file" accept="image/*" multiple hidden />
+        </div>
+
+        <!-- 标题 -->
+        <div class="field">
+          <label class="field__label" for="title">标题</label>
+          <input class="input" id="title" maxlength="40" placeholder="比如：这家铜锅涮肉，两个人吃到扶墙" />
+        </div>
+
+        <!-- 正文 -->
+        <div class="field">
+          <label class="field__label" for="content">正文</label>
+          <textarea class="textarea" id="content" maxlength="2000" rows="7"
+                    placeholder="点了什么、味道如何、人均多少、有没有坑…"></textarea>
+          <div class="counter"><span id="count">0</span> / 2000</div>
+        </div>
+
+        <!-- 关联店铺 -->
+        <div class="field">
+          <label class="field__label" for="shopId">关联店铺 ID（可选）</label>
+          <input class="input" id="shopId" type="number" placeholder="在店铺详情页地址栏能看到，比如 1" />
+        </div>
+
+        <div class="row" style="margin-top:26px;gap:12px">
+          <button class="btn btn--primary btn--lg" id="publish" style="flex:1">发布</button>
+          <button class="btn btn--ghost btn--lg" id="cancel">取消</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div id="app-footer"></div>
+
+  <script src="js/api.js"></script>
+  <script src="js/ui.js"></script>
+  <script>
+    (() => {
+      const MAX = 9;
+      const images = [];      // 已上传成功的可访问 URL
+      let uploading = 0;
+
+      const $shots = document.getElementById('shots');
+      const $file = document.getElementById('file');
+      const $title = document.getElementById('title');
+      const $content = document.getElementById('content');
+      const $count = document.getElementById('count');
+      const $publish = document.getElementById('publish');
+
+      /* ---------- 图片区 ---------- */
+
+      function renderShots() {
+        const thumbs = images
+          .map(
+            (url, i) =>
+              '<div class="shot">' +
+                '<img src="' + UI.esc(url) + '" alt="" />' +
+                (i === 0 ? '<span class="tag" style="position:absolute;left:6px;bottom:6px">封面</span>' : '') +
+                '<button class="shot__del" data-del="' + i + '" title="删除">×</button>' +
+              '</div>'
+          )
+          .join('');
+
+        const busy = uploading
+          ? '<div class="shot shot--busy">上传中…</div>'.repeat(uploading)
+          : '';
+
+        const add =
+          images.length + uploading < MAX
+            ? '<div class="shot shot--add" id="add">' + UI.icons.plus + '<span>添加</span></div>'
+            : '';
+
+        $shots.innerHTML = thumbs + busy + add;
+
+        const $add = document.getElementById('add');
+        if ($add) $add.onclick = () => $file.click();
+
+        $shots.querySelectorAll('[data-del]').forEach((btn) => {
+          btn.onclick = () => {
+            images.splice(Number(btn.dataset.del), 1);
+            renderShots();
+          };
+        });
+      }
+
+      $file.onchange = async () => {
+        const files = Array.from($file.files || []);
+        $file.value = '';
+        if (!files.length) return;
+
+        for (const f of files) {
+          if (images.length + uploading >= MAX) {
+            UI.toast('最多 ' + MAX + ' 张', 'err');
+            break;
+          }
+          uploading += 1;
+          renderShots();
+          try {
+            const name = await API.upload('/upload/blog', f);
+            // 后端返回 /blogs/3/5/uuid.jpg；imgs 是 nginx 上的静态目录
+            images.push('imgs' + name);
+          } catch (e) {
+            UI.toast(e.message, 'err');
+          } finally {
+            uploading -= 1;
+            renderShots();
+          }
+        }
+      };
+
+      /* ---------- 字数 ---------- */
+
+      $content.oninput = () => {
+        $count.textContent = $content.value.length;
+      };
+
+      /* ---------- 发布 ---------- */
+
+      $publish.onclick = async () => {
+        if (!API.isLogin()) return UI.requireLogin();
+
+        const title = $title.value.trim();
+        const content = $content.value.trim();
+        const shopId = $shopIdValue();
+
+        if (!title) {
+          UI.toast('起个标题吧', 'err');
+          $title.focus();
+          return;
+        }
+        if (content.length < 10) {
+          UI.toast('正文至少写 10 个字', 'err');
+          $content.focus();
+          return;
+        }
+        if (uploading) {
+          UI.toast('图片还在上传，等等', 'err');
+          return;
+        }
+
+        $publish.disabled = true;
+        $publish.textContent = '发布中…';
+
+        try {
+          const res = await API.Blog.publish({
+            title,
+            content,
+            images: images.join(','),
+            shopId: shopId || null,
+          });
+          UI.toast('发布成功', 'ok');
+          const id = res.data;
+          setTimeout(() => {
+            location.href = id ? 'note.html?id=' + id : 'notes.html';
+          }, 300);
+        } catch (e) {
+          UI.toast(e.message, 'err');
+          $publish.disabled = false;
+          $publish.textContent = '发布';
+        }
+      };
+
+      function $shopIdValue() {
+        const v = document.getElementById('shopId').value.trim();
+        return v ? Number(v) : 0;
+      }
+
+      document.getElementById('cancel').onclick = () => history.back();
+
+      /* ---------- 启动 ---------- */
+
+      if (!API.isLogin()) {
+        UI.requireLogin();
+      } else {
+        UI.mountHeader('notes');
+        UI.mountFooter();
+        renderShots();
+
+        const shopId = UI.param('shopId');
+        if (shopId) document.getElementById('shopId').value = shopId;
+      }
+    })();
+  </script>
+</body>
+</html>

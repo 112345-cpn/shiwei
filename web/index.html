@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>拾味 SHIWEI · 发现城市里值得一去的地方</title>
+  <meta name="description" content="拾味 —— 精选本地店铺与真实探店笔记。" />
+  <link rel="icon" href="favicon.ico" />
+  <link rel="stylesheet" href="css/app.css" />
+</head>
+<body>
+  <div id="app-header"></div>
+
+  <main class="page">
+    <div class="wrap">
+      <!-- Hero -->
+      <section class="hero" id="hero">
+        <span class="hero__eyebrow">杭州 · 精选</span>
+        <h1 class="hero__title">在杭州，吃得<em>值得</em></h1>
+        <p class="hero__sub">
+          每一家都有人真的去过。评分、人均、营业时间都摊开写，不藏。
+        </p>
+      </section>
+
+      <!-- 分类 -->
+      <div class="cats" id="cats"></div>
+
+      <!-- 列表头部 -->
+      <div class="sec-head">
+        <div>
+          <h2 class="sec-head__title" id="list-title">附近好店</h2>
+          <p class="sec-head__desc" id="list-desc">正在加载…</p>
+        </div>
+        <div class="tabs" id="sort-tabs">
+          <button data-sort="" class="is-on">推荐</button>
+          <button data-sort="score">评分最高</button>
+          <button data-sort="comments">人气最旺</button>
+        </div>
+      </div>
+
+      <!-- 店铺列表 -->
+      <div class="grid" id="list"></div>
+
+      <!-- 加载更多 -->
+      <div style="text-align:center;margin-top:32px">
+        <button class="btn btn--ghost hide" id="more">加载更多</button>
+      </div>
+    </div>
+  </main>
+
+  <div id="app-footer"></div>
+
+  <script src="js/api.js"></script>
+  <script src="js/ui.js"></script>
+  <script>
+    (() => {
+      const state = {
+        types: [],
+        typeId: 0,          // 0 = 全部
+        sortBy: '',
+        page: 1,
+        total: 0,
+        keyword: '',
+        loading: false,
+      };
+
+      const $list = document.getElementById('list');
+      const $more = document.getElementById('more');
+      const $cats = document.getElementById('cats');
+      const $title = document.getElementById('list-title');
+      const $desc = document.getElementById('list-desc');
+
+      /* ---------- 分类 ---------- */
+
+      async function loadTypes() {
+        try {
+          const res = await API.Shop.types();
+          state.types = res.data || [];
+        } catch (e) {
+          UI.toast(e.message, 'err');
+          state.types = [];
+        }
+        renderCats();
+      }
+
+      function renderCats() {
+        const all =
+          '<button class="cat ' + (state.typeId === 0 ? 'is-on' : '') + '" data-id="0">全部</button>';
+        const rest = state.types
+          .map(
+            (t) =>
+              '<button class="cat ' + (state.typeId === t.id ? 'is-on' : '') + '" data-id="' + t.id + '">' +
+              '<img class="cat__icon" src="' + UI.esc(UI.typeIcon(t.icon)) + '" alt="" ' +
+              'onerror="this.style.display=\'none\'" />' +
+              UI.esc(t.name) +
+              '</button>'
+          )
+          .join('');
+        $cats.innerHTML = all + rest;
+
+        $cats.querySelectorAll('.cat').forEach((btn) => {
+          btn.onclick = () => {
+            state.typeId = Number(btn.dataset.id);
+            state.keyword = '';
+            state.page = 1;
+            renderCats();
+            load(true);
+          };
+        });
+      }
+
+      /* ---------- 店铺卡片 ---------- */
+
+      function card(s) {
+        const img = UI.firstImage(s.images);
+        const meta = [];
+        if (s.area) meta.push(UI.esc(s.area));
+        if (s.avgPrice) meta.push('<span class="shop__price">¥' + s.avgPrice + '</span><span>人均</span>');
+        if (s.openHours) meta.push('<span class="tag tag--gray">' + UI.esc(String(s.openHours).trim()) + '</span>');
+
+        return (
+          '<a class="shop" href="shop.html?id=' + s.id + '">' +
+            '<div class="shop__media">' +
+              (img
+                ? '<img class="shop__img" src="' + UI.esc(img) + '" alt="' + UI.esc(s.name) +
+                  '" loading="lazy" referrerpolicy="no-referrer" ' +
+                  'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'" />' +
+                  '<div class="shop__ph" style="display:none">' + UI.esc(s.name.slice(0, 1)) + '</div>'
+                : '<div class="shop__ph">' + UI.esc(s.name.slice(0, 1)) + '</div>') +
+              '<span class="shop__score">' + UI.icons.star + UI.score(s.score) + '</span>' +
+            '</div>' +
+            '<div class="shop__body">' +
+              '<h3 class="shop__name">' + UI.esc(s.name) + '</h3>' +
+              '<div class="shop__meta">' + meta.join('<i class="dot"></i>') + '</div>' +
+              '<div class="shop__foot">' +
+                '<span>' + UI.sold(s.sold) + ' 人去过</span>' +
+                '<span>' + UI.sold(s.comments) + ' 条评价</span>' +
+              '</div>' +
+            '</div>' +
+          '</a>'
+        );
+      }
+
+      /* ---------- 列表 ---------- */
+
+      function sortLabel() {
+        return { '': '推荐', score: '评分', comments: '人气' }[state.sortBy] || '推荐';
+      }
+
+      function syncTitle() {
+        const t = state.types.find((x) => x.id === state.typeId);
+        if (state.keyword) {
+          $title.textContent = '「' + state.keyword + '」的搜索结果';
+          $desc.textContent = '共找到 ' + state.total + ' 家';
+        } else if (t) {
+          $title.textContent = t.name;
+          $desc.textContent = '共 ' + state.total + ' 家 · 按' + sortLabel() + '排序';
+        } else {
+          $title.textContent = '全部好店';
+          $desc.textContent = '共 ' + state.total + ' 家 · 按' + sortLabel() + '排序';
+        }
+      }
+
+      async function load(reset) {
+        if (state.loading) return;
+        state.loading = true;
+
+        if (reset) {
+          $list.innerHTML = UI.skeletonGrid(6);
+          $more.classList.add('hide');
+        }
+
+        try {
+          let res;
+          if (state.keyword) {
+            res = await API.Shop.byName(state.keyword, state.page);
+          } else if (state.typeId === 0) {
+            // 没有「全部」类型接口，空关键字查名字即可拿到全部
+            res = await API.Shop.byName('', state.page);
+          } else {
+            res = await API.Shop.byType(state.typeId, state.page, state.sortBy);
+          }
+
+          const { records, total } = API.normalizePage(res);
+          state.total = total;
+
+          const html = records.map(card).join('');
+
+          if (reset) {
+            $list.innerHTML = html || UI.empty('这一栏还没有店', '换个分类看看？');
+          } else if (html) {
+            $list.insertAdjacentHTML('beforeend', html);
+          }
+
+          // 还有下一页就显示「加载更多」
+          const loaded = state.page * (records.length || 1);
+          $more.classList.toggle('hide', records.length === 0 || loaded >= total);
+          syncTitle();
+        } catch (e) {
+          if (reset) $list.innerHTML = UI.empty('没加载出来', e.message);
+          UI.toast(e.message, 'err');
+        } finally {
+          state.loading = false;
+        }
+      }
+
+      /* ---------- 事件 ---------- */
+
+      document.getElementById('sort-tabs').addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-sort]');
+        if (!btn) return;
+        document.querySelectorAll('#sort-tabs button').forEach((b) => b.classList.remove('is-on'));
+        btn.classList.add('is-on');
+        state.sortBy = btn.dataset.sort;
+        state.page = 1;
+        load(true);
+      });
+
+      $more.onclick = () => {
+        state.page += 1;
+        load(false);
+      };
+
+      /* ---------- 启动 ---------- */
+
+      UI.mountHeader('home');
+      UI.mountFooter();
+
+      state.keyword = UI.param('kw');
+      const kwInput = document.getElementById('hd-search');
+      if (kwInput && state.keyword) kwInput.value = state.keyword;
+      if (state.keyword) document.getElementById('sort-tabs').style.display = 'none';
+
+      loadTypes();
+      load(true);
+    })();
+  </script>
+</body>
+</html>

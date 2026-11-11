@@ -1,0 +1,46 @@
+# 生产环境配置 - 所有敏感信息通过环境变量注入
+server:
+  port: ${SERVER_PORT:8081}
+
+spring:
+  datasource:
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT:3306}/${DB_NAME:hmdp}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=true
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 50
+      minimum-idle: 10
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      database: ${REDIS_DB:0}
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+
+logging:
+  level:
+    com.hmdp: info
+  file:
+    name: /var/log/hmdp/hmdp.log
+
+hmdp:
+  auth:
+    # 生产绝对不允许把验证码回传给前端
+    expose-code: false
+  upload:
+    dir: ${UPLOAD_DIR:/var/www/hmdp/imgs}
+
+mybatis-plus:
+  configuration:
+    # 生产环境不要把 SQL 打到 stdout。
+    # 主配置里是 StdOutImpl，每条 SQL 同步写控制台 —— 压测时日志本身就成了瓶颈，
+    # 测出来的 QPS 没有参考价值（这点在 Go 推送服务上实测过：控制台输出让 P50 从 2.7ms 涨到 10.9ms，
+    # 换成写文件立刻恢复）。生产用 NoLoggingImpl，慢 SQL 交给 DB 侧的慢查询日志。
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl

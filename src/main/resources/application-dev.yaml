@@ -1,0 +1,46 @@
+# 开发环境配置 - 本地启动使用
+# 注意：生产环境请通过环境变量注入敏感信息
+server:
+  port: 8081
+
+spring:
+  datasource:
+    # 与 docker-compose 的默认值保持一致。原来这里写死了 localhost + 明文密码 jj312312，
+    # 结果「配置文件里的密码」和「容器真实密码」对不上，本地起服务必须先设环境变量才能连上，
+    # 而且明文密码跟着源码一起进了仓库。改成环境变量 + 安全默认值。
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:hmdp}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:hmdp123456}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DB:0}
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: /
+
+logging:
+  level:
+    com.hmdp: debug
+    com.hmdp.controller: info
+    com.hmdp.service: info
+
+# 本地开发专用开关
+hmdp:
+  auth:
+    # 把手机验证码直接返回给前端，登录页会自动填入，省得去翻日志。
+    # 生产环境必须为 false —— 打开等于任何人都能登录任意手机号。
+    expose-code: true
+  upload:
+    # 图片落盘目录（nginx 的静态目录）。
+    # 默认值是启动目录下的相对路径，项目放哪都能用；
+    # 如果 nginx 装在别处，改这一行即可，不用改代码重新编译。
+    dir: ./nginx-1.18.0/html/hmdp/imgs

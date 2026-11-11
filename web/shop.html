@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>店铺详情 · 拾味 SHIWEI</title>
+  <link rel="icon" href="favicon.ico" />
+  <link rel="stylesheet" href="css/app.css" />
+  <style>
+    /* 页面私有：抢购台时间线 */
+    .console {
+      display: grid;
+      gap: 0;
+    }
+    .console__head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 14px;
+    }
+    .dot-live {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--ink-4);
+      flex: none;
+    }
+    .dot-live.on {
+      background: var(--green);
+      box-shadow: 0 0 0 3px var(--green-soft);
+    }
+    .dot-live.off {
+      background: var(--line-strong);
+    }
+    .console__state {
+      margin-left: auto;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--ink-3);
+    }
+    .timeline {
+      display: grid;
+      gap: 12px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      max-height: 236px;
+      overflow: auto;
+    }
+    .tl {
+      display: grid;
+      grid-template-columns: 62px 1fr;
+      gap: 10px;
+      font-size: 12.5px;
+      align-items: start;
+    }
+    .tl__t {
+      color: var(--ink-4);
+      font-variant-numeric: tabular-nums;
+      font-size: 11.5px;
+      padding-top: 1px;
+    }
+    .tl__b {
+      color: var(--ink-2);
+      border-left: 2px solid var(--line);
+      padding-left: 12px;
+      line-height: 1.5;
+    }
+    .tl.is-key .tl__b {
+      border-left-color: var(--brand);
+      color: var(--ink);
+      font-weight: 600;
+    }
+    .tl.is-ok .tl__b {
+      border-left-color: var(--green);
+    }
+    .console__empty {
+      font-size: 12.5px;
+      color: var(--ink-4);
+      line-height: 1.6;
+    }
+    .album {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    .album__item {
+      aspect-ratio: 1;
+      border-radius: var(--r-sm);
+      overflow: hidden;
+      background: linear-gradient(135deg, #ece7e0, #ded6cc);
+    }
+    .album__item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .sticky {
+      position: sticky;
+      top: calc(var(--header-h) + 20px);
+    }
+    @media (max-width: 640px) {
+      .album {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app-header"></div>
+
+  <main class="page">
+    <div class="wrap" id="root">
+      <div class="hero-shot"><div class="sk" style="width:100%;height:100%"></div></div>
+      <div class="detail-2col">
+        <div class="panel"><div class="sk sk-line" style="width:40%"></div></div>
+        <div class="panel"><div class="sk sk-line" style="width:60%"></div></div>
+      </div>
+    </div>
+  </main>
+
+  <div id="app-footer"></div>
+
+  <script src="js/api.js"></script>
+  <script src="js/ui.js"></script>
+  <script>
+    (() => {
+      const shopId = Number(UI.param('id')) || 1;
+      const $root = document.getElementById('root');
+
+      let shop = null;
+      let vouchers = [];
+      let pendingOrder = null;   // { orderId, at } 等待推送
+      let waitTimer = null;
+
+      /* ================= 渲染 ================= */
+
+      function head() {
+        const img = UI.firstImage(shop.images);
+        const meta = [
+          '<span class="row" style="gap:5px">' +
+            '<span class="stars">' + UI.icons.star + '</span>' +
+            '<b>' + UI.score(shop.score) + '</b>' +
+            '<span style="opacity:.8">' + UI.sold(shop.comments) + ' 条评价</span>' +
+          '</span>',
+          shop.area ? '<span class="row" style="gap:5px">' + UI.icons.pin + UI.esc(shop.area) + '</span>' : '',
+          shop.avgPrice ? '<span>人均 ¥' + shop.avgPrice + '</span>' : '',
+          shop.openHours ? '<span class="row" style="gap:5px">' + UI.icons.clock + UI.esc(String(shop.openHours).trim()) + '</span>' : '',
+        ].filter(Boolean).join('<span style="opacity:.45">·</span>');
+
+        return (
+          '<div class="hero-shot">' +
+            (img
+              ? '<img class="hero-shot__img" src="' + UI.esc(img) + '" alt="' + UI.esc(shop.name) +
+                '" referrerpolicy="no-referrer" onerror="this.remove()" />'
+              : '') +
+            '<div class="hero-shot__cap">' +
+              '<h1 class="hero-shot__name">' + UI.esc(shop.name) + '</h1>' +
+              '<div class="hero-shot__meta">' + meta + '</div>' +
+            '</div>' +
+          '</div>'
+        );
+      }
+
+      function infoPanel() {
+        return (
+          '<div class="panel">' +
+            '<h2 class="sec-head__title" style="font-size:17px;margin-bottom:14px">店铺信息</h2>' +
+            '<dl class="kv">' +
+              '<dt>地址</dt><dd>' + UI.esc(shop.address || '—') + '</dd>' +
+              '<dt>商圈</dt><dd>' + UI.esc(shop.area || '—') + '</dd>' +
+              '<dt>人均</dt><dd>' + (shop.avgPrice ? '¥' + shop.avgPrice : '—') + '</dd>' +
+              '<dt>营业</dt><dd>' + UI.esc(String(shop.openHours || '—').trim()) + '</dd>' +
+              '<dt>评分</dt><dd>' + UI.score(shop.score) + ' / 5.0</dd>' +
+            '</dl>' +
+          '</div>'
+        );
+      }
+
+      function albumPanel() {
+        const imgs = UI.imageList(shop.images);
+        if (imgs.length <= 1) return '';
+        return (
+          '<div class="panel" style="margin-top:20px">' +
+            '<h2 class="sec-head__title" style="font-size:17px;margin-bottom:14px">店铺相册</h2>' +
+            '<div class="album">' +
+              imgs.map((u) =>
+                '<div class="album__item"><img src="' + UI.esc(u) + '" alt="" loading="lazy" ' +
+                'referrerpolicy="no-referrer" onerror="this.parentNode.style.background=\'#e6ded4\';this.remove()" /></div>'
+              ).join('') +
+            '</div>' +
+          '</div>'
+        );
+      }
+
+      function voucherRow(v) {
+        const isSeckill = v.type === 1;
+        const soldOut = isSeckill && (v.stock === undefined || v.stock === null || v.stock <= 0);
+        const off = v.actualValue ? '可抵 ¥' + UI.yuan(v.actualValue) : '';
+
+        let btn;
+        if (!isSeckill) {
+          btn = '<button class="btn btn--ghost btn--sm" disabled>到店领取</button>';
+        } else if (soldOut) {
+          btn = '<button class="btn btn--ghost btn--sm" disabled>已抢光</button>';
+        } else {
+          btn =
+            '<button class="btn btn--seckill btn--sm" data-seckill="' + v.id + '">' +
+            '<span style="position:relative;z-index:2">立即抢</span></button>';
+        }
+
+        const stockText = isSeckill
+          ? (soldOut ? '库存 0' : '仅剩 ' + v.stock + ' 张')
+          : '不限量';
+
+        return (
+          '<div class="voucher">' +
+            '<div class="voucher__left">' +
+              '<div class="voucher__pay"><small>¥</small>' + UI.yuan(v.payValue) + '</div>' +
+              '<div class="voucher__off">' + UI.esc(off) + '</div>' +
+            '</div>' +
+            '<div class="voucher__body">' +
+              '<h3 class="voucher__title">' + UI.esc(v.title || '代金券') + '</h3>' +
+              '<p class="voucher__sub">' + UI.esc(v.subTitle || '') + '</p>' +
+              '<div class="voucher__stock">' +
+                (isSeckill ? '<span class="tag tag--green" style="margin-right:8px">秒杀</span>' : '') +
+                stockText +
+              '</div>' +
+            '</div>' +
+            '<div class="voucher__act">' + btn + '</div>' +
+          '</div>'
+        );
+      }
+
+      function voucherPanel() {
+        const body = vouchers.length
+          ? vouchers.map(voucherRow).join('')
+          : UI.empty('暂时没有优惠', '这家店还没上券，晚点再来看看');
+
+        return (
+          '<div class="panel" style="margin-top:20px">' +
+            '<div class="between" style="margin-bottom:14px">' +
+              '<h2 class="sec-head__title" style="font-size:17px">优惠与秒杀</h2>' +
+              '<span class="muted" style="font-size:12.5px">秒杀券数量有限，抢完即止</span>' +
+            '</div>' +
+            body +
+          '</div>'
+        );
+      }
+
+      function consolePanel() {
+        return (
+          '<div class="panel sticky">' +
+            '<div class="console__head">' +
+              '<span class="dot-live" id="live-dot"></span>' +
+              '<span>实时抢购台</span>' +
+              '<span class="console__state" id="live-state">连接中…</span>' +
+            '</div>' +
+            '<ul class="timeline" id="timeline">' +
+              '<li class="console__empty" id="tl-empty">' +
+                '点「立即抢」后，这里会显示这次请求的完整链路：<br />' +
+                '扣库存 → 投递消息队列 → 异步下单 → 推送结果。' +
+              '</li>' +
+            '</ul>' +
+            '<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-4);line-height:1.6">' +
+              '结果通过 WebSocket 实时推送到本页，不用刷新。' +
+            '</div>' +
+          '</div>'
+        );
+      }
+
+      function render() {
+        document.title = shop.name + ' · 拾味 SHIWEI';
+        $root.innerHTML =
+          head() +
+          '<div class="detail-2col">' +
+            '<div>' + infoPanel() + voucherPanel() + albumPanel() + '</div>' +
+            '<div>' + consolePanel() + '</div>' +
+          '</div>';
+
+        $root.querySelectorAll('[data-seckill]').forEach((btn) => {
+          btn.onclick = () => seckill(Number(btn.dataset.seckill), btn);
+        });
+      }
+
+      /* ================= 时间线 ================= */
+
+      const t0 = Date.now();
+
+      function tl(text, kind = '') {
+        const box = document.getElementById('timeline');
+        if (!box) return;
+        const empty = document.getElementById('tl-empty');
+        if (empty) empty.remove();
+
+        const now = Date.now() - t0;
+        const stamp = '+' + (now / 1000).toFixed(2) + 's';
+        const li = document.createElement('li');
+        li.className = 'tl ' + (kind ? 'is-' + kind : '');
+        li.innerHTML =
+          '<span class="tl__t">' + stamp + '</span>' +
+          '<span class="tl__b">' + UI.esc(text) + '</span>';
+        box.appendChild(li);
+        box.scrollTop = box.scrollHeight;
+      }
+
+      function resetTimeline() {
+        const box = document.getElementById('timeline');
+        if (box) box.innerHTML = '';
+      }
+
+      /* ================= 秒杀 ================= */
+
+      async function seckill(voucherId, btn) {
+        if (!UI.requireLogin()) return;
+
+        const old = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span style="position:relative;z-index:2">排队中…</span>';
+
+        resetTimeline();
+        tl('发起请求 /voucher-order/seckill/' + voucherId, 'key');
+
+        try {
+          const started = performance.now();
+          const res = await API.Shop.seckill(voucherId);
+          const cost = Math.round(performance.now() - started);
+          const orderId = res.data;
+
+          tl('接口返回 ' + cost + 'ms · 订单号 ' + orderId, 'ok');
+          tl('库存已在 Redis 原子扣减，消息进入队列');
+          tl('等待异步下单结果…');
+
+          pendingOrder = { orderId: String(orderId), at: Date.now() };
+          btn.innerHTML = '<span style="position:relative;z-index:2">等结果…</span>';
+
+          UI.toast('已进入队列，结果马上推送');
+
+          // 兜底：8 秒还没收到推送，说明 WS 不通，如实告知
+          clearTimeout(waitTimer);
+          waitTimer = setTimeout(() => {
+            if (!pendingOrder) return;
+            tl('8 秒内未收到推送（WebSocket 可能未连接）', 'key');
+            UI.toast('推送没到，订单可能已创建，请稍后在「我的」查看', 'err');
+            btn.disabled = false;
+            btn.innerHTML = old;
+            pendingOrder = null;
+          }, 8000);
+        } catch (e) {
+          tl('失败：' + e.message, 'key');
+          UI.toast(e.message, 'err');
+          btn.disabled = false;
+          btn.innerHTML = old;
+        }
+      }
+
+      /* ================= WebSocket ================= */
+
+      function onPush(msg) {
+        if (msg.type === 'seckill_result') {
+          clearTimeout(waitTimer);
+          const ok = msg.success === true;
+
+          tl((ok ? '推送到达：下单成功' : '推送到达：下单失败') + '（' + (msg.msg || '') + '）', ok ? 'ok' : 'key');
+
+          UI.sheet({
+            ok,
+            title: ok ? '抢到了' : '没抢到',
+            desc: ok
+              ? '订单已生成，30 秒内到「我的」完成支付才算了事。'
+              : (msg.msg || '这次没成功，下次快一点'),
+            orderId: msg.orderId ? String(msg.orderId) : '',
+            actionText: ok ? '知道了' : '再试一次',
+            onAction: () => {
+              if (!ok) location.reload();
+            },
+          });
+
+          // 恢复按钮：成功了就把这张券当已抢
+          if (ok && pendingOrder) {
+            document.querySelectorAll('[data-seckill="' + msg.voucherId + '"]').forEach((b) => {
+              b.disabled = true;
+              b.className = 'btn btn--ghost btn--sm';
+              b.textContent = '已抢到';
+            });
+          } else {
+            document.querySelectorAll('.btn--seckill[disabled]').forEach((b) => {
+              b.disabled = false;
+              b.innerHTML = '<span style="position:relative;z-index:2">立即抢</span>';
+            });
+          }
+          pendingOrder = null;
+        } else if (msg.type === 'connected') {
+          tl('WebSocket 已连接，可接收实时通知', 'ok');
+        }
+      }
+
+      function watchState() {
+        const dot = document.getElementById('live-dot');
+        const state = document.getElementById('live-state');
+        if (!dot || !state) return;
+        const s = window.__wsState;
+        dot.className = 'dot-live ' + (s === 'open' ? 'on' : s === 'closed' ? 'off' : '');
+        state.textContent = s === 'open' ? '已连接' : s === 'closed' ? '已断开，重连中' : '连接中…';
+        state.style.color = s === 'open' ? 'var(--green)' : 'var(--ink-3)';
+      }
+
+      /* ================= 启动 ================= */
+
+      UI.mountHeader('');
+      UI.mountFooter();
+
+      (async () => {
+        try {
+          const [shopRes, vRes] = await Promise.all([
+            API.Shop.detail(shopId),
+            API.Shop.vouchers(shopId).catch(() => ({ data: [] })),
+          ]);
+          shop = shopRes.data;
+          if (!shop) {
+            $root.innerHTML = UI.empty('店铺不存在', '检查一下链接里的 id');
+            return;
+          }
+          vouchers = vRes.data || [];
+          render();
+        } catch (e) {
+          $root.innerHTML = UI.empty('没加载出来', e.message);
+          return;
+        }
+
+        UI.bindSeckillPush(onPush);
+        setInterval(watchState, 500);
+        watchState();
+      })();
+    })();
+    </script>
+  </body>
+</html>

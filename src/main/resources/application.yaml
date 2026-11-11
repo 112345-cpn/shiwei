@@ -1,0 +1,150 @@
+server:
+  port: 8081
+
+spring:
+  profiles:
+    active: dev
+  application:
+    name: hmdp
+  cloud:
+    compatibility-verifier:
+      enabled: false
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:hmdp}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:hmdp123456}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 30000
+      connection-timeout: 30000
+      max-lifetime: 1800000
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DB:0}
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+          time-between-eviction-runs: 10s
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: /
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        # 自动 ACK 模式：消费者方法正常返回则 ACK，抛异常则 NACK
+        acknowledge-mode: auto
+        # 每次预取 10 条消息
+        prefetch: 10
+        # 最小 5 个并发消费者
+        concurrency: 5
+        # 最大 20 个并发消费者
+        max-concurrency: 20
+        # 消费失败重试配置
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1000ms
+          multiplier: 2
+          max-interval: 10000ms
+        # 默认全部通过 RabbitMQ 重试机制处理失败
+        default-requeue-rejected: false
+
+  jackson:
+    default-property-inclusion: non_null
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+
+logging:
+  level:
+    com.hmdp: debug
+    org.springframework.amqp: info
+  file:
+    name: ${LOG_PATH:./logs}/${LOG_FILE_NAME:hmdp}.log
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId}] %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId}] %logger{36} - %msg%n"
+
+# SpringDoc / Knife4j 配置
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+  default-flat-param-object: true
+
+# Knife4j 增强配置
+knife4j:
+  enable: true
+  setting:
+    language: zh_cn
+    enable-version: true
+    enable-swagger-models: true
+    swagger-model-name: 实体类列表
+  basic:
+    enable: false
+    username: admin
+    password: admin
+
+# Sentinel 配置
+sentinel:
+  transport:
+    # Sentinel Dashboard 地址。
+    # 原来写的是 8080，但应用自己就监听 8081、docker-compose 里的控制台在 8858，
+    # 三处对不上导致控制台始终连不上。这里统一成 8858。
+    dashboard: ${SENTINEL_DASHBOARD:localhost:8858}
+  eager: false
+  web-context-unify: true
+  filter:
+    enabled: false  # 关闭 Sentinel 自带 servlet 过滤器，使用我们的注解
+  flow:
+    cold-start:
+      enabled: false  # 关闭冷启动（启动时不限流，生产可开）
+  log:
+    dir: ${LOG_PATH:./logs}/sentinel
+
+mybatis-plus:
+  type-aliases-package: com.hmdp.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# 自定义业务配置
+hmdp:
+  jwt:
+    secret: ${JWT_SECRET:hmdp-jwt-secret-key-please-change-in-production-environment-2026}
+    expire: 86400
+  seckill:
+    # 秒杀预扣库存的 Redis Key 前缀
+    stock-key-prefix: "seckill:stock:"
+    # 秒杀订单的 Redis Key 前缀（用于防重复下单）
+    order-key-prefix: "seckill:order:"
+    # 用户限购数量
+    user-limit: 1
+  # 注意：RabbitMQ 的交换机 / 队列 / 路由键名统一定义在 RabbitMQConfig 的常量里
+  # （hmdp.seckill.exchange / hmdp.seckill.order / hmdp.seckill.order.dl）。
+  # 这里不再重复配置 —— 原来两处各写一套且名字不一致，实际生效的是代码常量，
+  # yaml 那套是死的，容易在面试或排查时答错。
