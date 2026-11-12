@@ -61,6 +61,9 @@ public class User implements Serializable {
      * 更新时间
      */
     private LocalDateTime updateTime;
-
+    /**
+     * 邮箱
+     */
+    private String email;
 
 }

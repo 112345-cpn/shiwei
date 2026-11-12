@@ -49,11 +49,11 @@ public class UserController {
      * 不限流的话，一个脚本就能把短信通道刷爆（每条短信都是真金白银）。
      * 这里按 IP 限到 1 秒 1 次，比按用户限流更合适 —— 这个接口调用时用户还没登录。
      */
+
     @IpRateLimiter(name = "ip:user.sendCode", qps = 1, message = "验证码请求过于频繁，请稍后再试")
     @PostMapping("code")
-    public Result sendCode(@RequestParam("phone") String phone, HttpSession session) {
-
-        return userService.sedcode(phone,session);
+    public Result sendCode(@RequestParam("email") String email, HttpSession session) {
+        return userService.sedcode(email, session);
     }
 
     /**

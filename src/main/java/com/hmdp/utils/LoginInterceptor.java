@@ -1,29 +1,25 @@
 package com.hmdp.utils;
 
-
-import org.springframework.context.annotation.Configuration;
-import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-@Configuration
-public class LoginInterceptor implements HandlerInterceptor {
-    private StringRedisTemplate stringRedisTemplate;
 
-    public LoginInterceptor() {
-        this.stringRedisTemplate = stringRedisTemplate;
-    }
+/**
+ * 第二道拦截器：RefreshTokenInterceptor 把用户放进 UserHolder 之后，这里只负责「人在不在」。
+ * 它是在 MvcConfig 里 new 出来的，不需要 @Configuration。
+ */
+@Slf4j
+public class LoginInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
-        System.out.println("【安检门】当前 UserHolder 里的用户是：" + UserHolder.getUser());
-      if(UserHolder.getUser()==null){
-          System.out.println("【安检门】没抓到人，轰出去！");
-          response.setStatus(401);
-          return false;
-      }
+        if (UserHolder.getUser() == null) {
+            log.debug("未登录访问 {}，返回 401", request.getRequestURI());
+            response.setStatus(401);
+            return false;
+        }
         return true;
     }
 

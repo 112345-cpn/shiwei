@@ -17,11 +17,12 @@ import jakarta.servlet.http.HttpSession;
  */
 public interface IUserService extends IService<User> {
 
-    Result sedcode(String phone, HttpSession session);
+    Result sedcode(String email, HttpSession session);
 
     Result login(LoginFormDTO loginForm, HttpSession session);
 
     Result sign();
 
     Result signcount();
+
 }

@@ -45,6 +45,21 @@ spring:
     publisher-returns: true
     template:
       mandatory: true
+  mail:
+    host: ${MAIL_HOST:smtp.qq.com}
+    port: ${MAIL_PORT:465}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    default-encoding: UTF-8
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+          connectiontimeout: 8000
+          timeout: 8000
+          writetimeout: 8000
     listener:
       simple:
         # 自动 ACK 模式：消费者方法正常返回则 ACK，抛异常则 NACK

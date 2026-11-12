@@ -4,6 +4,7 @@ package com.hmdp.utils;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.StrUtil;
 import com.hmdp.dto.UserDTO;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -15,6 +16,7 @@ import java.util.concurrent.TimeUnit;
 
 import static com.hmdp.utils.RedisConstants.LOGIN_CODE_TTL;
 
+@Slf4j
 public class RefreshTokenInterceptor implements HandlerInterceptor {
 
     // 1. 这里直接用 StringRedisTemplate，不要在构造函数里强转
@@ -27,8 +29,6 @@ public class RefreshTokenInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         String token = request.getHeader("authorization");
-        // 【测谎仪 1：前端交票了吗？】
-        System.err.println("【1. 前端传来的Token】: " + token);
 
         if (StrUtil.isBlank(token)) {
             return true;
@@ -36,16 +36,15 @@ public class RefreshTokenInterceptor implements HandlerInterceptor {
 
         String key = "login:token:" + token;
         Map<Object, Object> userMap = stringRedisTemplate.opsForHash().entries(key);
-        // 【测谎仪 2：Redis 里面有这个人吗？】
-        System.err.println("【2. Redis查出的Map】: " + userMap);
 
         if (userMap.isEmpty()) {
             return true;
         }
 
         UserDTO userDTO = BeanUtil.fillBeanWithMap(userMap, new UserDTO(), false);
-        // 【测谎仪 3：UserDTO 转换成功了吗？是不是因为没 Lombok 变成空壳了？】
-        System.err.println("【3. 转换后的UserDTO】: " + userDTO.getId() + " | " + userDTO.getNickName());
+        // 原来这里是控制台打印，每次请求都刷一行，演示时很难看。
+        // 改成 debug 级别：需要排查时把 com.hmdp 的日志级别调到 debug 就能看到。
+        log.debug("token 解析：token={}，用户={}", token, userDTO.getId());
 
         UserHolder.saveUser(userDTO);
         stringRedisTemplate.expire(key, RedisConstants.LOGIN_USER_TTL, TimeUnit.MINUTES);

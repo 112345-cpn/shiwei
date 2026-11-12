@@ -125,6 +125,11 @@ services:
       # 否则 nginx 的 @uploaded 回退找不到图。
       UPLOAD_DIR: /var/www/hmdp/imgs
       LOG_PATH: /var/log/hmdp
+      # 邮件（邮箱验证码）——.env 里的值必须在这里中转一次，容器里才读得到
+      MAIL_HOST: ${MAIL_HOST:-smtp.qq.com}
+      MAIL_PORT: ${MAIL_PORT:-465}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
       JAVA_OPTS: "-Xms256m -Xmx768m -XX:+UseG1GC -XX:MaxRAMPercentage=70.0"
     ports:
       # 直接访问后端（调试用）；走页面请用 8080

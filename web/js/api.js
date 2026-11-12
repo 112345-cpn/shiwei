@@ -173,8 +173,8 @@ const API = (() => {
   };
 
   const User = {
-    sendCode: (phone) => postForm('/user/code', { phone }),
-    login: (phone, code) => post('/user/login', { phone, code }),
+    sendCode: (email) => postForm('/user/code', { email }),
+    login: (email, code) => post('/user/login', { email, code }),
     logout: () => post('/user/logout'),
     me: () => get('/user/me'),
     info: (id) => get('/user/info/' + id),

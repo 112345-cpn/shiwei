@@ -36,13 +36,13 @@
     <main class="auth__main">
       <div class="auth__box">
         <h1 class="auth__title">登录 / 注册</h1>
-        <p class="auth__sub">没有账号？输手机号就自动创建。</p>
+        <p class="auth__sub">没有账号？输邮箱就自动创建。</p>
 
         <form id="form" novalidate>
           <div class="field">
-            <label class="field__label" for="phone">手机号</label>
-            <input class="input" id="phone" type="tel" inputmode="numeric" maxlength="11"
-                   placeholder="11 位手机号" autocomplete="tel" />
+            <label class="field__label" for="email">邮箱</label>
+            <input class="input" id="email" type="email"
+                   placeholder="you@example.com" autocomplete="email" />
           </div>
 
           <div class="field">
@@ -63,8 +63,7 @@
         </form>
 
         <p class="auth__hint" id="hint">
-          本地开发环境会把验证码直接带回来并自动填入；
-          生产环境走真实短信通道，不会回传。
+          验证码会发到你的邮箱，2 分钟内有效，一个码只能用一次。
         </p>
       </div>
     </main>
@@ -74,7 +73,7 @@
   <script src="js/ui.js"></script>
   <script>
     (() => {
-      const $phone = document.getElementById('phone');
+      const $email = document.getElementById('email');
       const $code = document.getElementById('code');
       const $send = document.getElementById('send');
       const $submit = document.getElementById('submit');
@@ -83,17 +82,17 @@
       let countdown = 0;
       let timer = null;
 
-      function validPhone(p) {
-        return /^1[3-9]\d{9}$/.test(p);
+      function validEmail(e) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
       }
 
       /* ---------- 发送验证码 ---------- */
 
       $send.onclick = async () => {
-        const phone = $phone.value.trim();
-        if (!validPhone(phone)) {
-          UI.toast('手机号格式不对', 'err');
-          $phone.focus();
+        const email = $email.value.trim();
+        if (!validEmail(email)) {
+          UI.toast('邮箱格式不对', 'err');
+          $email.focus();
           return;
         }
 
@@ -101,7 +100,7 @@
         $send.textContent = '发送中…';
 
         try {
-          const res = await API.User.sendCode(phone);
+          const res = await API.User.sendCode(email);
 
           // 后端在开发环境会把验证码带回来，方便本地自测
           if (res.data && res.data.code) {
@@ -110,7 +109,8 @@
               '开发环境已自动填入验证码 <code>' + UI.esc(res.data.code) + '</code>' +
               '（生产环境不会返回）';
           } else {
-            UI.toast('验证码已发送', 'ok');
+            UI.toast('验证码已发到邮箱', 'ok');
+            $hint.textContent = '验证码已发到 ' + email + '，2 分钟内有效。收不到就翻一下垃圾箱。';
           }
 
           countdown = 60;
@@ -147,17 +147,17 @@
       document.getElementById('form').onsubmit = async (e) => {
         e.preventDefault();
 
-        const phone = $phone.value.trim();
+        const email = $email.value.trim();
         const code = $code.value.trim();
 
-        if (!validPhone(phone)) return UI.toast('手机号格式不对', 'err');
+        if (!validEmail(email)) return UI.toast('邮箱格式不对', 'err');
         if (code.length !== 6) return UI.toast('验证码是 6 位', 'err');
 
         $submit.disabled = true;
         $submit.textContent = '登录中…';
 
         try {
-          const res = await API.User.login(phone, code);
+          const res = await API.User.login(email, code);
           const data = res.data || {};
 
           // 后端直接返回 token 字符串，也可能返回 {token}

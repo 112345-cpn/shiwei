@@ -3,7 +3,9 @@ package com.hmdp.service.impl;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.bean.copier.CopyOptions;
 import cn.hutool.core.lang.UUID;
+import cn.hutool.core.util.BooleanUtil;
 import cn.hutool.core.util.RandomUtil;
+import com.alibaba.csp.sentinel.util.StringUtil;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.dto.LoginFormDTO;
 import com.hmdp.dto.Result;
@@ -16,6 +18,7 @@ import com.hmdp.utils.RegexUtils;
 import com.hmdp.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.connection.BitFieldSubCommands;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -33,7 +36,9 @@ import java.util.concurrent.TimeUnit;
 
 import static com.hmdp.utils.RedisConstants.*;
 import static com.hmdp.utils.SystemConstants.USER_NICK_NAME_PREFIX;
-
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
 /**
  * <p>
  * 服务实现类
@@ -50,7 +55,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
 
     @Resource
     private final UserMapper userMapper;
-
+    @Resource
+    private JavaMailSender javaMailSender;
+    @Value("${spring.mail.username:}")
+    private String mailfrom;
     /**
      * 是否把验证码明文返回给前端。
      *
@@ -68,41 +76,69 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         this.userMapper = userMapper;
     }
 
+    /**
+     * 真正把信发出去。
+     * 故意不在这里吞掉错误 —— 发失败了必须让上面知道，
+     * 不然用户就傻等一封永远不会来的信。
+     */
+    private void sendMail(String to,String code){
+        SimpleMailMessage msg=new SimpleMailMessage();
+        msg.setFrom(mailfrom);
+        msg.setTo(to);
+        msg.setSubject("【拾味】登录验证码");
+        msg.setText("你的登录验证码是 " + code + "，2 分钟内有效。\n\n"
+                + "如果不是你本人操作，忽略这封邮件即可。");
+        javaMailSender.send(msg);
+    }
     @Override
-    public Result sedcode(String phone, HttpSession session) {
-        if (RegexUtils.isPhoneInvalid(phone)) {
-            return Result.fail("手机号格式错误");
+    public Result sedcode(String email, HttpSession session) {
+        if(RegexUtils.isEmailInvalid(email)){
+            return Result.fail("邮箱格式错误");
         }
-        String code = RandomUtil.randomNumbers(6);
-        stringRedisTemplate.opsForValue().set(LOGIN_CODE_KEY + phone, code, LOGIN_CODE_TTL, TimeUnit.MINUTES);
-
-        if (exposeCode) {
-            log.info("【开发模式】手机号 {} 的验证码是 {}（生产环境请关闭 hmdp.auth.expose-code）", phone, code);
-            Map<String, Object> data = new HashMap<>(2);
-            data.put("code", code);
+        Boolean first=stringRedisTemplate.opsForValue().setIfAbsent(LOGIN_CODE_KEY+"limit:"+email,
+                "1",60,TimeUnit.SECONDS);
+        if(Boolean.FALSE.equals(first)){
+            return Result.fail("请60秒之后再重试");
+        }
+        String code=RandomUtil.randomNumbers(6);
+        stringRedisTemplate.opsForValue().set(LOGIN_CODE_KEY+email,code,LOGIN_CODE_TTL,TimeUnit.MINUTES);
+        try{
+            sendMail(email,code);
+        }catch (Exception e){
+            log.error("验证码发送失败，收件人{}",email,e);
+            stringRedisTemplate.delete(LOGIN_CODE_KEY+"limit:"+email);
+            return Result.fail("邮件发送失败，检查邮箱地址或稍后再试。");
+        }
+        if(exposeCode){
+            log.info("【开发模式】{} 的验证码是 {}（生产环境请关闭 hmdp.auth.expose-code）", email, code);
+            Map<String,Object> data = new HashMap<>();
+            data.put("code",code);
             return Result.ok(data);
         }
-
-        log.debug("发送验证码成功，验证码：{}", code);
+        log.info("验证码已发送至{}",email);
         return Result.ok();
     }
 
     @Override
     public Result login(LoginFormDTO loginForm, HttpSession session) {
-        String phone = loginForm.getPhone();
-        if (RegexUtils.isPhoneInvalid(phone)) {
-            return Result.fail("手机号格式错误");
+        String email=loginForm.getEmail();
+        if(RegexUtils.isEmailInvalid(email)){
+            return Result.fail("邮箱格式错误");
         }
-        String cachecode = stringRedisTemplate.opsForValue().get(LOGIN_CODE_KEY + phone).toString();
-        String code = loginForm.getCode();
-        if (cachecode == null || !cachecode.equals(code)) {
-            return Result.fail("验证码错误");
+        String code=loginForm.getCode();
+        // 这个字段是原版声明的 raw 类型 RedisTemplate，get() 返回的是 Object，
+        // 所以先接住再转字符串；不能用 .toString() 直接接，验证码过期后会是空值，当场崩。
+        Object cachedObj = stringRedisTemplate.opsForValue().get(LOGIN_CODE_KEY + email);
+        String cached = cachedObj == null ? null : cachedObj.toString();
+        if(cached==null||!cached.equals(code)){
+            return Result.fail("验证码错误或者已过期") ;
         }
-        User user = query().eq("phone", phone).one();
-        if (user == null) {
-            user = new User();
-            user.setPhone(phone);
-            user.setNickName(USER_NICK_NAME_PREFIX + RandomUtil.randomString(10));
+        stringRedisTemplate.delete(LOGIN_CODE_KEY+email);
+        User user=query().eq("email",email).one();
+        if(user==null){
+            user=new User();
+            user.setEmail(email);
+            user.setNickName(USER_NICK_NAME_PREFIX+RandomUtil.randomString(10));
             save(user);
         }
         // 1. 生成token
