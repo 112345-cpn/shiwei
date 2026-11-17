@@ -17,6 +17,7 @@ import com.shiwei.trade.entity.Voucher;
 import com.shiwei.trade.mapper.OrderMapper;
 import com.shiwei.trade.mapper.PaymentMapper;
 import com.shiwei.trade.mapper.RefundMapper;
+import com.shiwei.trade.mapper.SeckillVoucherMapper;
 import com.shiwei.trade.mapper.VoucherMapper;
 import com.shiwei.trade.vo.RefundVO;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +49,8 @@ public class RefundService {
     private final OrderMapper orderMapper;
     private final PaymentMapper paymentMapper;
     private final VoucherMapper voucherMapper;
+    private final SeckillVoucherMapper seckillVoucherMapper;
+    private final SeckillQuotaStore quotaStore;
     private final OrderService orderService;
     private final IdGenerator idGenerator;
 
@@ -130,6 +133,11 @@ public class RefundService {
                 .eq(Payment::getOrderId, o.getId())
                 .set(Payment::getStatus, 3));
         voucherMapper.restoreStock(o.getVoucherId(), o.getQuantity());
+
+        // 秒杀券退款后要把名额还回 Redis，否则他退了也抢不了第二次
+        if (seckillVoucherMapper.selectById(o.getVoucherId()) != null) {
+            quotaStore.releaseAfterCommit(o.getVoucherId(), o.getUserId());
+        }
     }
 
     public PageResult<RefundVO> myRefunds(Long userId, long pageNo, long pageSize) {

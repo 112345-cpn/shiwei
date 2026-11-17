@@ -31,4 +31,19 @@ public final class RedisKeys {
     public static String userTokens(Long userId) {
         return USER_TOKENS_PREFIX + userId;
     }
+
+    /** 秒杀库存，String 类型，值是剩余张数 */
+    public static String seckillStock(Long voucherId) {
+        return SECKILL_STOCK_PREFIX + voucherId;
+    }
+
+    /** 已经抢到的用户集合，一人一单靠它挡 */
+    public static String seckillUsers(Long voucherId) {
+        return SECKILL_ORDER_USER + voucherId;
+    }
+
+    /** 单个用户的抢购结果，给前端轮询用 */
+    public static String seckillResult(Long voucherId, Long userId) {
+        return "shiwei:seckill:result:" + voucherId + ":" + userId;
+    }
 }

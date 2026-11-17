@@ -125,8 +125,9 @@ INSERT INTO `tb_voucher` (`id`,`merchant_id`,`shop_id`,`title`,`sub_title`,`rule
 (6,1,7,'涮羊肉双人餐','羊肉两份+涮菜拼盘+饮料','限晚市使用',1,19800,15800,300,208,DATE_SUB(NOW(), INTERVAL 10 DAY),DATE_ADD(NOW(), INTERVAL 50 DAY),DATE_SUB(NOW(), INTERVAL 10 DAY),DATE_ADD(NOW(), INTERVAL 70 DAY),1),
 (7,2,4,'开业尝鲜券','任意饮品立减 10 元','开业首月专享',0,1000,0,100,0,DATE_SUB(NOW(), INTERVAL 3 DAY),DATE_ADD(NOW(), INTERVAL 27 DAY),DATE_SUB(NOW(), INTERVAL 3 DAY),DATE_ADD(NOW(), INTERVAL 57 DAY),1);
 
+-- 秒杀场次：开始时间设在 1 小时前，pull 下来就能直接测，不用等到明天
 INSERT INTO `tb_seckill_voucher` (`voucher_id`,`stock`,`begin_time`,`end_time`) VALUES
-(7,100,DATE_ADD(NOW(), INTERVAL 1 DAY),DATE_ADD(NOW(), INTERVAL 28 DAY));
+(7,100,DATE_SUB(NOW(), INTERVAL 1 HOUR),DATE_ADD(NOW(), INTERVAL 7 DAY));
 
 -- ------------------------------------------------------------
 -- 已核销订单（评价必须挂在这些订单上）

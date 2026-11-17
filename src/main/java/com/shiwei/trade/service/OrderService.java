@@ -21,6 +21,7 @@ import com.shiwei.trade.entity.Payment;
 import com.shiwei.trade.entity.Voucher;
 import com.shiwei.trade.mapper.OrderMapper;
 import com.shiwei.trade.mapper.PaymentMapper;
+import com.shiwei.trade.mapper.SeckillVoucherMapper;
 import com.shiwei.trade.mapper.VoucherMapper;
 import com.shiwei.trade.vo.OrderVO;
 import lombok.RequiredArgsConstructor;
@@ -55,6 +56,8 @@ public class OrderService {
     private final VoucherMapper voucherMapper;
     private final PaymentMapper paymentMapper;
     private final ShopMapper shopMapper;
+    private final SeckillVoucherMapper seckillVoucherMapper;
+    private final SeckillQuotaStore quotaStore;
     private final VoucherService voucherService;
     private final ReviewMapper reviewMapper;
     private final IdGenerator idGenerator;
@@ -67,6 +70,12 @@ public class OrderService {
     @Transactional(rollbackFor = Exception.class)
     public Long submit(Long userId, OrderSubmitForm form) {
         Voucher v = voucherService.requireOnSale(form.getVoucherId());
+
+        // 秒杀券必须走抢购入口。不拦这一下，谁都能绕开 Redis 预扣直接下单，秒杀就成了摆设
+        if (seckillVoucherMapper.selectById(v.getId()) != null) {
+            throw BizException.of(ErrorCode.BAD_REQUEST, "该券为限时抢购，请从抢购入口下单");
+        }
+
         Shop shop = shopMapper.selectById(v.getShopId());
         if (shop == null) {
             throw BizException.of(ErrorCode.SHOP_NOT_FOUND);
@@ -88,6 +97,15 @@ public class OrderService {
             throw BizException.of(ErrorCode.VOUCHER_SOLD_OUT);
         }
 
+        return createPendingOrder(userId, v, n);
+    }
+
+    /**
+     * 建一张待支付单。普通下单和秒杀落单共用这一段，
+     * 保证两条链路的快照字段、核销码、超时时间算法完全一致。
+     * 调用方负责先扣库存。
+     */
+    public Long createPendingOrder(Long userId, Voucher v, int quantity) {
         Order o = new Order();
         o.setOrderNo(idGenerator.nextOrderNo());
         o.setUserId(userId);
@@ -95,10 +113,10 @@ public class OrderService {
         o.setShopId(v.getShopId());
         o.setMerchantId(v.getMerchantId());
         o.setTitle(v.getTitle());
-        o.setQuantity(n);
+        o.setQuantity(quantity);
         o.setUnitPrice(v.getSalePrice());
         // 金额用乘出来的结果落快照，不依赖前端传的合计，避免被改价下单
-        o.setPayAmount(v.getSalePrice() * n);
+        o.setPayAmount(v.getSalePrice() * quantity);
         o.setStatus(OrderStatus.PENDING_PAY.getCode());
         // 和延迟队列的 TTL 用同一个常量，否则消息先到或晚到会让关单时间对不上
         o.setExpireTime(LocalDateTime.now().plus(Duration.ofMillis(RabbitMQConfig.ORDER_PAY_TTL_MS)));
@@ -173,7 +191,19 @@ public class OrderService {
             return false;
         }
         voucherMapper.restoreStock(o.getVoucherId(), o.getQuantity());
+        releaseSeckillQuota(o);
         return true;
+    }
+
+    /**
+     * 秒杀单关单时要把 Redis 里的名额一起还回去，否则这个用户被标记成「已购」再也抢不了，
+     * 那一格库存也不会回到 Redis，最后是「显示有货但谁抢都失败」。
+     */
+    private void releaseSeckillQuota(Order o) {
+        if (seckillVoucherMapper.selectById(o.getVoucherId()) == null) {
+            return;
+        }
+        quotaStore.releaseAfterCommit(o.getVoucherId(), o.getUserId());
     }
 
     public PageResult<OrderVO> myOrders(Long userId, Integer status, long pageNo, long pageSize) {

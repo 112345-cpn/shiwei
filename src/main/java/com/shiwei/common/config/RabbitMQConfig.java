@@ -17,17 +17,20 @@ public class RabbitMQConfig {
     public static final String EXCHANGE_SHOP = "shiwei.shop";
     public static final String EXCHANGE_TRADE = "shiwei.trade";
     public static final String EXCHANGE_DELAY = "shiwei.delay";
+    public static final String EXCHANGE_SECKILL = "shiwei.seckill";
 
     public static final String QUEUE_RATING = "shiwei.queue.rating";
     public static final String QUEUE_ORDER_PAID = "shiwei.queue.order.paid";
     public static final String QUEUE_ORDER_TIMEOUT = "shiwei.queue.order.timeout";
     public static final String QUEUE_ORDER_DELAY = "shiwei.queue.order.delay";
     public static final String QUEUE_NOTIFY = "shiwei.queue.notify";
+    public static final String QUEUE_SECKILL = "shiwei.queue.seckill";
 
     public static final String RK_RATING = "review.rating";
     public static final String RK_ORDER_PAID = "order.paid";
     public static final String RK_ORDER_TIMEOUT = "order.timeout";
     public static final String RK_NOTIFY = "notify.#";
+    public static final String RK_SECKILL = "seckill.order";
 
     public static final long ORDER_PAY_TTL_MS = 15 * 60 * 1000L;
 
@@ -52,6 +55,11 @@ public class RabbitMQConfig {
     }
 
     @Bean
+    public DirectExchange seckillExchange() {
+        return new DirectExchange(EXCHANGE_SECKILL, true, false);
+    }
+
+    @Bean
     public DirectExchange delayExchange() {
         return new DirectExchange(EXCHANGE_DELAY, true, false);
     }
@@ -69,6 +77,15 @@ public class RabbitMQConfig {
     @Bean
     public Queue notifyQueue() {
         return QueueBuilder.durable(QUEUE_NOTIFY).build();
+    }
+
+    /**
+     * 秒杀下单队列。不开自动删除：活动结束后队列里可能还有没消费完的消息，
+     * 自动删掉会丢单。
+     */
+    @Bean
+    public Queue seckillQueue() {
+        return QueueBuilder.durable(QUEUE_SECKILL).build();
     }
 
     /**
@@ -114,5 +131,10 @@ public class RabbitMQConfig {
     @Bean
     public Binding delayBinding() {
         return BindingBuilder.bind(orderTimeoutQueue()).to(delayExchange()).with(RK_ORDER_TIMEOUT);
+    }
+
+    @Bean
+    public Binding seckillBinding() {
+        return BindingBuilder.bind(seckillQueue()).to(seckillExchange()).with(RK_SECKILL);
     }
 }
