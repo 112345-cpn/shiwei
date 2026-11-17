@@ -22,6 +22,9 @@ public final class RedisKeys {
     public static final String GEO_SHOP_KEY = "shiwei:geo:shops";
     public static final String HOT_SEARCH_KEY = "shiwei:hot:search";
 
+    /** 推送给 WebSocket 网关的频道，和 gopush 里的 redisChannel 必须一致 */
+    public static final String PUSH_CHANNEL = "shiwei:push";
+
     public static final String REVIEW_LIKE_LOCK = "shiwei:lock:review:useful:";
     public static final String VERIFY_LOCK = "shiwei:lock:verify:";
 

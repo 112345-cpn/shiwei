@@ -45,12 +45,7 @@ com.shiwei
 └── admin           平台运营后台接口
 ```
 
-仓库里除了 Java 服务，还有一个独立的 Go 服务：
-
-```
-gateway/            WebSocket 网关（Go）
-                    只做连接管理和消息转发，不碰数据库
-```
+长连接不在这个仓库里 —— 那是独立的 Go 服务 [`gopush`](https://github.com/112345-cpn/go-push-service)，只订阅 Redis 频道、管连接、转发，不碰数据库。
 
 ---
 
@@ -95,8 +90,20 @@ gateway/            WebSocket 网关（Go）
 - [x] **核销**：四道门（商家归属 → 门店授权 → 订单状态 → 券有效期）；重复扫码返回 `repeated=true` 而不是报错；`uk_order` 兜住幂等
 - [x] **退款**：已核销不可退、券过期不可退、待审去重；审核通过一次性完成退款单/订单/流水/库存四步，全程同一事务
 - [x] **秒杀**：Redis + Lua 原子判库存/判一人一单、MQ 异步落单、DB 条件扣减兜底；预热用 `setIfAbsent` 防止活动进行中被重置；关单和退款都归还 Redis 名额
-- [x] **WebSocket 网关**（`gateway/`，Go）：长连接从 Java 里拆出来单独一个服务，订阅 MQ 按 userId 推送；秒杀结果、支付成功、核销完成、退款变更四条事件已接入
-- [x] 容器化：`docker-compose up` 一键起 MySQL / Redis / RabbitMQ / App / 网关，schema 与种子数据自动导入
+- [x] **实时推送**：业务事件通过 Redis Pub/Sub 发给独立的长连接网关（Go 项目 gopush），前端不用轮询秒杀结果
+- [x] 容器化：`docker-compose up` 一键起 MySQL / Redis / RabbitMQ / App，schema 与种子数据自动导入
+
+## 和网关的衔接
+
+WebSocket 长连接由独立的 Go 服务承担（[`gopush`](https://github.com/112345-cpn/go-push-service)，另仓维护），
+它订阅 Redis 的 `shiwei:push` 频道，消息格式是 `uid:json`：
+
+```text
+7:{"type":"SECKILL_RESULT","data":{"status":"SUCCESS","orderId":"12"}}
+```
+
+Java 侧只负责 `PUBLISH`，不知道谁在线、也不知道怎么推 —— 那些是网关的事。
+网关默认连宿主机 `6380`（compose 里 Redis 的映射端口），另一台机器上用 `REDIS_ADDR` 指定。
 
 ## 还没做（按依赖顺序）
 
