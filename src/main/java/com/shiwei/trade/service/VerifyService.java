@@ -6,6 +6,8 @@ import com.shiwei.auth.mapper.UserMapper;
 import com.shiwei.common.enums.OrderStatus;
 import com.shiwei.common.exception.BizException;
 import com.shiwei.common.exception.ErrorCode;
+import com.shiwei.common.push.PushService;
+import com.shiwei.common.push.PushType;
 import com.shiwei.merchant.entity.MerchantStaff;
 import com.shiwei.merchant.mapper.MerchantStaffMapper;
 import com.shiwei.merchant.service.MerchantService;
@@ -26,6 +28,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -39,6 +42,7 @@ public class VerifyService {
     private final MerchantService merchantService;
     private final ShopMapper shopMapper;
     private final UserMapper userMapper;
+    private final PushService pushService;
 
     /**
      * 核销。四道门：
@@ -109,6 +113,11 @@ public class VerifyService {
         o.setStatus(OrderStatus.VERIFIED.getCode());
         o.setVerifyTime(now);
         o.setVerifyStaffId(staffUserId);
+
+        // 用户可能正拿着手机在店里，核销完立刻告诉他「已使用，可以评价了」
+        pushService.toUser(o.getUserId(), PushType.ORDER_VERIFIED,
+                Map.of("orderId", o.getId(), "title", o.getTitle(), "verifyTime", now.toString()));
+
         return build(o, false);
     }
 

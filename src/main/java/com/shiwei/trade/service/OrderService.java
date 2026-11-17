@@ -8,6 +8,8 @@ import com.shiwei.common.config.RabbitMQConfig;
 import com.shiwei.common.enums.OrderStatus;
 import com.shiwei.common.exception.BizException;
 import com.shiwei.common.exception.ErrorCode;
+import com.shiwei.common.push.PushService;
+import com.shiwei.common.push.PushType;
 import com.shiwei.common.result.PageResult;
 import com.shiwei.common.util.IdGenerator;
 import com.shiwei.review.entity.Review;
@@ -62,6 +64,7 @@ public class OrderService {
     private final ReviewMapper reviewMapper;
     private final IdGenerator idGenerator;
     private final RabbitTemplate rabbitTemplate;
+    private final PushService pushService;
 
     /**
      * 下单。库存扣减和订单落库在同一个事务里：
@@ -173,6 +176,10 @@ public class OrderService {
         }
 
         publishPaid(orderId);
+
+        // 推一条「券已到账」，前端收到就去刷订单列表，不用等用户手动刷新
+        pushService.toUser(userId, PushType.ORDER_PAID,
+                Map.of("orderId", orderId, "title", o.getTitle(), "payAmount", o.getPayAmount()));
     }
 
     /**

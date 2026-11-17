@@ -2,7 +2,10 @@ package com.shiwei.trade.mq;
 
 import com.shiwei.common.config.RabbitMQConfig;
 import com.shiwei.common.exception.BizException;
+import com.shiwei.common.push.PushService;
+import com.shiwei.common.push.PushType;
 import com.shiwei.trade.service.SeckillService;
+import com.shiwei.trade.vo.SeckillResultVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -14,6 +17,7 @@ import org.springframework.stereotype.Component;
 public class SeckillOrderConsumer {
 
     private final SeckillService seckillService;
+    private final PushService pushService;
 
     /**
      * 秒杀落单。这里是整条链路的终点，也是最容易出不一致的地方：
@@ -32,6 +36,9 @@ public class SeckillOrderConsumer {
             Long orderId = seckillService.createOrder(msg);
             seckillService.markSuccess(voucherId, userId, orderId);
             log.info("秒杀落单成功 voucherId={} userId={} orderId={}", voucherId, userId, orderId);
+
+            // 推给网关，前端不用再轮询 /result 了
+            pushService.toUser(userId, PushType.SECKILL_RESULT, SeckillResultVO.success(orderId));
         } catch (Exception e) {
             String reason = e instanceof BizException ? e.getMessage() : "下单失败，已为你退回资格";
             log.error("秒杀落单失败 voucherId={} userId={}", voucherId, userId, e);
@@ -39,6 +46,7 @@ public class SeckillOrderConsumer {
                 // rollback 会清掉结果 key，所以必须放在 markFail 之前
                 seckillService.rollback(voucherId, userId);
                 seckillService.markFail(voucherId, userId, reason);
+                pushService.toUser(userId, PushType.SECKILL_RESULT, SeckillResultVO.fail(reason));
             } catch (Exception inner) {
                 // 连回滚都失败，只能靠预热任务和人工对账收拾
                 log.error("秒杀回滚失败，库存可能少卖 voucherId={} userId={}", voucherId, userId, inner);

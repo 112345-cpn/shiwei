@@ -3,6 +3,11 @@ target/
 *.jar
 !.mvn/wrapper/maven-wrapper.jar
 
+# Go 网关的编译产物
+gateway/gateway
+gateway/gateway.exe
+*.test
+
 .idea/
 *.iml
 *.iws

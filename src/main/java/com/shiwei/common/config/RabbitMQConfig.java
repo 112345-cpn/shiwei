@@ -25,12 +25,14 @@ public class RabbitMQConfig {
     public static final String QUEUE_ORDER_DELAY = "shiwei.queue.order.delay";
     public static final String QUEUE_NOTIFY = "shiwei.queue.notify";
     public static final String QUEUE_SECKILL = "shiwei.queue.seckill";
+    public static final String QUEUE_WS_PUSH = "shiwei.queue.ws.push";
 
     public static final String RK_RATING = "review.rating";
     public static final String RK_ORDER_PAID = "order.paid";
     public static final String RK_ORDER_TIMEOUT = "order.timeout";
     public static final String RK_NOTIFY = "notify.#";
     public static final String RK_SECKILL = "seckill.order";
+    public static final String RK_WS_PUSH = "ws.push";
 
     public static final long ORDER_PAY_TTL_MS = 15 * 60 * 1000L;
 
@@ -89,6 +91,15 @@ public class RabbitMQConfig {
     }
 
     /**
+     * WebSocket 推送队列，由 Go 网关消费。
+     * 参数必须和网关侧 go 代码里的 QueueDeclare 完全一致，否则 MQ 会报 PRECONDITION_FAILED。
+     */
+    @Bean
+    public Queue wsPushQueue() {
+        return QueueBuilder.durable(QUEUE_WS_PUSH).build();
+    }
+
+    /**
      * 订单超时队列。靠 TTL + 死信实现延迟，不依赖 rabbitmq_delayed_message_exchange 插件，
      * 这样本地和服务器上都不用额外装东西。
      * 注意 x-message-ttl 是队列级参数，一旦队列已存在就不能改，
@@ -136,5 +147,10 @@ public class RabbitMQConfig {
     @Bean
     public Binding seckillBinding() {
         return BindingBuilder.bind(seckillQueue()).to(seckillExchange()).with(RK_SECKILL);
+    }
+
+    @Bean
+    public Binding wsPushBinding() {
+        return BindingBuilder.bind(wsPushQueue()).to(tradeExchange()).with(RK_WS_PUSH);
     }
 }

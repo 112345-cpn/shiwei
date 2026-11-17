@@ -7,6 +7,8 @@ import com.shiwei.common.enums.OrderStatus;
 import com.shiwei.common.exception.BizException;
 import com.shiwei.common.exception.ErrorCode;
 import com.shiwei.common.result.PageResult;
+import com.shiwei.common.push.PushService;
+import com.shiwei.common.push.PushType;
 import com.shiwei.common.util.IdGenerator;
 import com.shiwei.trade.dto.RefundApplyForm;
 import com.shiwei.trade.dto.RefundAuditForm;
@@ -28,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 退款。未核销的券可以退，核销过的不能退 —— 这条规则是线下核销的常识，
@@ -53,6 +56,7 @@ public class RefundService {
     private final SeckillQuotaStore quotaStore;
     private final OrderService orderService;
     private final IdGenerator idGenerator;
+    private final PushService pushService;
 
     @Transactional(rollbackFor = Exception.class)
     public Long apply(Long userId, RefundApplyForm form) {
@@ -123,6 +127,8 @@ public class RefundService {
 
         if (!pass) {
             orderMapper.rollbackToPendingUse(o.getId());
+            pushService.toUser(o.getUserId(), PushType.REFUND_CHANGED,
+                    Map.of("orderId", o.getId(), "status", "REJECTED"));
             return;
         }
 
@@ -138,6 +144,9 @@ public class RefundService {
         if (seckillVoucherMapper.selectById(o.getVoucherId()) != null) {
             quotaStore.releaseAfterCommit(o.getVoucherId(), o.getUserId());
         }
+
+        pushService.toUser(o.getUserId(), PushType.REFUND_CHANGED,
+                Map.of("orderId", o.getId(), "status", "REFUNDED", "amount", o.getPayAmount()));
     }
 
     public PageResult<RefundVO> myRefunds(Long userId, long pageNo, long pageSize) {

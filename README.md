@@ -45,6 +45,13 @@ com.shiwei
 └── admin           平台运营后台接口
 ```
 
+仓库里除了 Java 服务，还有一个独立的 Go 服务：
+
+```
+gateway/            WebSocket 网关（Go）
+                    只做连接管理和消息转发，不碰数据库
+```
+
 ---
 
 ## 数据库
@@ -88,7 +95,8 @@ com.shiwei
 - [x] **核销**：四道门（商家归属 → 门店授权 → 订单状态 → 券有效期）；重复扫码返回 `repeated=true` 而不是报错；`uk_order` 兜住幂等
 - [x] **退款**：已核销不可退、券过期不可退、待审去重；审核通过一次性完成退款单/订单/流水/库存四步，全程同一事务
 - [x] **秒杀**：Redis + Lua 原子判库存/判一人一单、MQ 异步落单、DB 条件扣减兜底；预热用 `setIfAbsent` 防止活动进行中被重置；关单和退款都归还 Redis 名额
-- [x] 容器化：`docker-compose up` 一键起 MySQL / Redis / RabbitMQ / App，schema 与种子数据自动导入
+- [x] **WebSocket 网关**（`gateway/`，Go）：长连接从 Java 里拆出来单独一个服务，订阅 MQ 按 userId 推送；秒杀结果、支付成功、核销完成、退款变更四条事件已接入
+- [x] 容器化：`docker-compose up` 一键起 MySQL / Redis / RabbitMQ / App / 网关，schema 与种子数据自动导入
 
 ## 还没做（按依赖顺序）
 

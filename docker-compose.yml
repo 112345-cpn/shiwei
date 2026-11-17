@@ -82,6 +82,27 @@ services:
     volumes:
       - upload_data:/app/imgs
 
+  # WebSocket 网关。只做连接管理和消息转发，不碰数据库。
+  # Go 的 goroutine 几 KB，单机能扛的并发连接数比 JVM 线程模型高一个量级，
+  # 所以把长连接这块从 Java 里拆出来单独扩缩容。
+  gateway:
+    build: ./gateway
+    container_name: shiwei-gateway
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      app:
+        condition: service_started
+    environment:
+      GATEWAY_PORT: 8082
+      # 容器内走服务名 + 内部端口，不是宿主机映射的 8081/5673
+      JAVA_BASE_URL: http://app:8081
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      PUSH_QUEUE: shiwei.queue.ws.push
+      TZ: Asia/Shanghai
+    ports:
+      - "8082:8082"
+
 volumes:
   mysql_data:
   redis_data:
